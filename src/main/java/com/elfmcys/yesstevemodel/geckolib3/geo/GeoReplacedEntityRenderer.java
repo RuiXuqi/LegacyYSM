@@ -170,42 +170,48 @@ public abstract class GeoReplacedEntityRenderer<T extends EntityLivingBase, E ex
         boolean mainBrightness = this.setDoRenderBrightness(entity, partialTick);
 
         Color renderColor = this.getRenderColor(entity, partialTick);
-        boolean isVisible = !entity.isInvisible();
-        boolean isGhost = !isVisible && !entity.isInvisibleToPlayer(mc.thePlayer);
-        if (isVisible || isGhost) {
-            this.bindEntityTexture(entity);
-            if (isGhost) {
-                // GlStateManager.Profile.TRANSPARENT_MODEL
-                GL11.glPushMatrix();
-                GL11.glColor4f(1.0F, 1.0F, 1.0F, 0.15F);
-                GL11.glDepthMask(false);
-                GL11.glEnable(GL11.GL_BLEND);
-                GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-                GL11.glAlphaFunc(GL11.GL_GREATER, 1.0F / 255.0F);
+        try {
+            boolean isVisible = !entity.isInvisible();
+            boolean isGhost = !isVisible && !entity.isInvisibleToPlayer(mc.thePlayer);
+            if (isVisible || isGhost) {
+                this.bindEntityTexture(entity);
+                if (isGhost) {
+                    // GlStateManager.Profile.TRANSPARENT_MODEL
+                    GL11.glPushMatrix();
+                    GL11.glColor4f(1.0F, 1.0F, 1.0F, 0.15F);
+                    GL11.glDepthMask(false);
+                    GL11.glEnable(GL11.GL_BLEND);
+                    GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                    GL11.glAlphaFunc(GL11.GL_GREATER, 1.0F / 255.0F);
+                }
+                this.render(model, entity, partialTick,
+                        (float) renderColor.getRed() / 255f, (float) renderColor.getGreen() / 255f,
+                        (float) renderColor.getBlue() / 255f, (float) renderColor.getAlpha() / 255);
+                if (isGhost) {
+                    GL11.glDisable(GL11.GL_BLEND);
+                    GL11.glAlphaFunc(GL11.GL_GREATER, 0.1F);
+                    GL11.glPopMatrix();
+                    GL11.glDepthMask(true);
+                }
             }
-            this.render(model, entity, partialTick,
-                    (float) renderColor.getRed() / 255f, (float) renderColor.getGreen() / 255f,
-                    (float) renderColor.getBlue() / 255f, (float) renderColor.getAlpha() / 255);
-            if (isGhost) {
-                GL11.glDisable(GL11.GL_BLEND);
-                GL11.glAlphaFunc(GL11.GL_GREATER, 0.1F);
-                GL11.glPopMatrix();
-                GL11.glDepthMask(true);
-            }
+        } finally {
+            if (mainBrightness) this.unsetBrightness();
         }
 
-        if (mainBrightness) this.unsetBrightness();
         GL11.glDepthMask(true);
 
         if (!(entity instanceof EntityPlayer player) || !SpectatorCompat.isSpectator(player)) {
             for (GeoLayerRenderer layerRenderer : this.layerRenderers) {
                 boolean layerBrightness = this.setBrightness(entity, partialTick, layerRenderer.shouldCombineTextures());
-                layerRenderer.render(
-                        entity, limbSwing, limbSwingAmount,
-                        partialTick, lerpedAge,
-                        netHeadYaw, headPitch, renderColor
-                );
-                if (layerBrightness) this.unsetBrightness();
+                try {
+                    layerRenderer.render(
+                            entity, limbSwing, limbSwingAmount,
+                            partialTick, lerpedAge,
+                            netHeadYaw, headPitch, renderColor
+                    );
+                } finally {
+                    if (layerBrightness) this.unsetBrightness();
+                }
             }
         }
 
@@ -424,6 +430,9 @@ public abstract class GeoReplacedEntityRenderer<T extends EntityLivingBase, E ex
         boolean isHurtOrDying = entitylivingbaseIn.hurtTime > 0 || entitylivingbaseIn.deathTime > 0;
         if (!hasCustomColor && (!isHurtOrDying || !combineTextures)) return false;
 
+        // The 1.8 brightness combiner must not escape into 1.7.10 world or GUI rendering.
+        GL11.glPushAttrib(GL11.GL_TEXTURE_BIT | GL11.GL_CURRENT_BIT);
+
         OpenGlHelper.setActiveTexture(OpenGlHelper.defaultTexUnit);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL11.GL_TEXTURE_ENV_MODE, GL13.GL_COMBINE);
@@ -489,43 +498,7 @@ public abstract class GeoReplacedEntityRenderer<T extends EntityLivingBase, E ex
      */
     @SuppressWarnings("JavadocReference")
     protected void unsetBrightness() {
-        OpenGlHelper.setActiveTexture(OpenGlHelper.defaultTexUnit);
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL11.GL_TEXTURE_ENV_MODE, GL13.GL_COMBINE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_COMBINE_RGB, GL11.GL_MODULATE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE0_RGB, OpenGlHelper.defaultTexUnit);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE1_RGB, GL13.GL_PRIMARY_COLOR);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND0_RGB, GL11.GL_SRC_COLOR);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND1_RGB, GL11.GL_SRC_COLOR);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_COMBINE_ALPHA, GL11.GL_MODULATE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE0_ALPHA, OpenGlHelper.defaultTexUnit);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE1_ALPHA, GL13.GL_PRIMARY_COLOR);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND0_ALPHA, GL11.GL_SRC_ALPHA);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND1_ALPHA, GL11.GL_SRC_ALPHA);
-        OpenGlHelper.setActiveTexture(OpenGlHelper.lightmapTexUnit);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL11.GL_TEXTURE_ENV_MODE, GL13.GL_COMBINE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_COMBINE_RGB, GL11.GL_MODULATE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND0_RGB, GL11.GL_SRC_COLOR);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND1_RGB, GL11.GL_SRC_COLOR);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE0_RGB, GL11.GL_TEXTURE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE1_RGB, GL13.GL_PREVIOUS);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_COMBINE_ALPHA, GL11.GL_MODULATE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND0_ALPHA, GL11.GL_SRC_ALPHA);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE0_ALPHA, GL11.GL_TEXTURE);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-        OpenGlHelper.setActiveTexture(GL13.GL_TEXTURE2);
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL11.GL_TEXTURE_ENV_MODE, GL13.GL_COMBINE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_COMBINE_RGB, GL11.GL_MODULATE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND0_RGB, GL11.GL_SRC_COLOR);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND1_RGB, GL11.GL_SRC_COLOR);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE0_RGB, GL11.GL_TEXTURE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE1_RGB, GL13.GL_PREVIOUS);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_COMBINE_ALPHA, GL11.GL_MODULATE);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_OPERAND0_ALPHA, GL11.GL_SRC_ALPHA);
-        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL13.GL_SOURCE0_ALPHA, GL11.GL_TEXTURE);
-        OpenGlHelper.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        GL11.glPopAttrib();
     }
 
     @Override
